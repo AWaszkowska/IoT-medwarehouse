@@ -65,12 +65,15 @@
 #define GMT_OFFSET_SECS_DST ((PST_TIME_ZONE + PST_TIME_ZONE_DAYLIGHT_SAVINGS_DIFF) * 3600)
 
 #define DHTPIN 32 // digital pin connected to the DHT sensor
+#define DHTPIN2 33 // digital pin connected to the DHT sensor
 #define DHTTYPE DHT22
+
 
 // initializing a sensor
 DHT dht(32, DHT22);
+DHT dht2(33, DHT22);
 
-// Translate iot_configs.h defines into variables used by the sample
+// Translate iot_configs.h defines into variables
 static const char* ssid = IOT_CONFIG_WIFI_SSID;
 static const char* password = IOT_CONFIG_WIFI_PASSWORD;
 static const char* host = IOT_CONFIG_IOTHUB_FQDN;
@@ -78,7 +81,7 @@ static const char* mqtt_broker_uri = "mqtts://" IOT_CONFIG_IOTHUB_FQDN;
 static const char* device_id = IOT_CONFIG_DEVICE_ID;
 static const int mqtt_port = AZ_IOT_DEFAULT_MQTT_CONNECT_PORT;
 
-// Memory allocated for the sample's variables and structures.
+// Memory allocated for the variables and structures.
 static esp_mqtt_client_handle_t mqtt_client;
 static az_iot_hub_client client;
 
@@ -96,6 +99,8 @@ static char incoming_data[INCOMING_DATA_BUFFER_SIZE];
 
 float temp;
 float humid;
+float temp2;
+float humid2;
 
 // Auxiliary functions
 #ifndef IOT_CONFIG_USE_X509_CERT
@@ -313,6 +318,7 @@ static void establishConnection()
 {
   Serial.begin(115200);
   dht.begin();
+  dht2.begin();
   connectToWiFi();
   initializeTime();
   initializeIoTHubClient();
@@ -320,26 +326,61 @@ static void establishConnection()
 }
 
 
+// static void getTelemetryPayload(az_span payload, az_span* out_payload)
+// {
+//   az_span original_payload = payload;
+
+//   payload = az_span_copy(payload, AZ_SPAN_FROM_STR("{ \"msgCount\": "));
+//   (void)az_span_u32toa(payload, telemetry_send_count++, &payload);
+//   payload = az_span_copy(payload, AZ_SPAN_FROM_STR(" }"));      
+
+//   payload = az_span_copy(payload, AZ_SPAN_FROM_STR("{ \"Temperature\": "));
+//   (void)az_span_u32toa(payload, temp, &payload);
+//   payload = az_span_copy(payload, AZ_SPAN_FROM_STR(" }"));
+
+//   payload = az_span_copy(payload, AZ_SPAN_FROM_STR("{ \"Humidity\": "));
+//   (void)az_span_u32toa(payload, humid, &payload);
+//   payload = az_span_copy(payload, AZ_SPAN_FROM_STR(" }"));
+//   payload = az_span_copy_u8(payload, '\0');
+
+//   *out_payload = az_span_slice(
+//       original_payload, 0, az_span_size(original_payload) - az_span_size(payload) - 1);
+// }
+
+// adding commas, deleting } to make easy parsing possible
 static void getTelemetryPayload(az_span payload, az_span* out_payload)
 {
   az_span original_payload = payload;
+  az_span tempPayload = payload;
 
-  payload = az_span_copy(payload, AZ_SPAN_FROM_STR("{ \"msgCount\": "));
-  (void)az_span_u32toa(payload, telemetry_send_count++, &payload);
-  payload = az_span_copy(payload, AZ_SPAN_FROM_STR(" }"));
+  // Construct the JSON object string
+  tempPayload = az_span_copy(tempPayload, AZ_SPAN_FROM_STR("{ "));
+  
+  tempPayload = az_span_copy(tempPayload, AZ_SPAN_FROM_STR("\"msgCount\": "));
+  (void)az_span_u32toa(tempPayload, telemetry_send_count++, &tempPayload);
+  tempPayload = az_span_copy(tempPayload, AZ_SPAN_FROM_STR(", "));
 
-  payload = az_span_copy(payload, AZ_SPAN_FROM_STR("{ \"Temperature\": "));
-  (void)az_span_u32toa(payload, temp, &payload);
-  payload = az_span_copy(payload, AZ_SPAN_FROM_STR(" }"));
+  tempPayload = az_span_copy(tempPayload, AZ_SPAN_FROM_STR("\"Temperature_1\": "));
+  (void)az_span_u32toa(tempPayload, temp, &tempPayload);
+  tempPayload = az_span_copy(tempPayload, AZ_SPAN_FROM_STR(", "));
 
-  payload = az_span_copy(payload, AZ_SPAN_FROM_STR("{ \"Humidity\": "));
-  (void)az_span_u32toa(payload, humid, &payload);
-  payload = az_span_copy(payload, AZ_SPAN_FROM_STR(" }"));
-  payload = az_span_copy_u8(payload, '\0');
+  tempPayload = az_span_copy(tempPayload, AZ_SPAN_FROM_STR("\"Humidity_1\": "));
+  (void)az_span_u32toa(tempPayload, humid, &tempPayload);
+  tempPayload = az_span_copy(tempPayload, AZ_SPAN_FROM_STR(", "));
 
+  tempPayload = az_span_copy(tempPayload, AZ_SPAN_FROM_STR("\"Temperature_2\": "));
+  (void)az_span_u32toa(tempPayload, temp2, &tempPayload);
+  tempPayload = az_span_copy(tempPayload, AZ_SPAN_FROM_STR(", "));
+
+  tempPayload = az_span_copy(tempPayload, AZ_SPAN_FROM_STR("\"Humidity_2\": "));
+  (void)az_span_u32toa(tempPayload, humid2, &tempPayload);
+  
+  
   *out_payload = az_span_slice(
-      original_payload, 0, az_span_size(original_payload) - az_span_size(payload) - 1);
+      // original_payload, 0, az_span_size(original_payload) - az_span_size(tempPayload) - 1);
+      original_payload, 0, az_span_size(original_payload) - az_span_size(tempPayload));
 }
+
 
 static void sendTelemetry()
 {
@@ -385,13 +426,22 @@ void loop()
   delay(2000);
   float h = dht.readHumidity();
   float t = dht.readTemperature();
+  float h2 = dht2.readHumidity();
+  float t2 = dht2.readTemperature();
 
   temp = t;
   humid = h;
+  temp2 = t2;
+  humid2 = h2;
   
   //check if reading failed
   if (isnan(h) || isnan(t)){
     Serial.println(F("Failed to read from DHT sensor"));
+    return;
+  }
+
+  if (isnan(h2) || isnan(t2)){
+    Serial.println(F("Failed to read from DHT2 sensor"));
     return;
   }
 
